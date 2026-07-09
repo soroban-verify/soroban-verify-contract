@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["contracts/verification_registry"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Richardkingz2019/soroban-verify-contract"
+
+[workspace.dependencies]
+soroban-sdk = "23.0.2"
+
+# Settings recommended by the Soroban docs for small, deterministic Wasm.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+# Faster iteration when inspecting Wasm output without full optimization.
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true

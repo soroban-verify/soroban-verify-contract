@@ -1,0 +1,6 @@
+# Cargo.lock is intentionally committed: SEP-58 reproducible builds
+# require a fully pinned dependency graph.
+target/
+.soroban/
+.stellar/
+*.wasm
