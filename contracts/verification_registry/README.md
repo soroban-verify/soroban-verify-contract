@@ -6,9 +6,11 @@ The **on-chain source of truth for verification results**. Any wallet, explorer,
 
 | Key | Value | Storage |
 |---|---|---|
-| `Verification(ContractId)` | `VerificationRecord { wasm_hash, repo_url, commit_sha, trust_level, verifier, sep55_attestation_ref, timestamp }` | persistent |
+| `Verification(ContractId)` | `VerificationRecord { wasm_hash, repo_url, commit_sha, trust_level, verifier, sep55_attestation_ref, timestamp, build_image_digest, toolchain_version }` | persistent |
 | `Verifier(Address)` | `VerifierInfo { name, pubkey, active }` | persistent |
 | `Admin` | Multi-sig admin address (governance) | instance |
+
+The two `build_image_digest` / `toolchain_version` fields are SEP-58 build-environment metadata. Empty string is tolerated for legacy records; the hosted verifier always populates them. See `types.rs` for the SEP-58 spec pointers.
 
 ## Interface
 
@@ -35,6 +37,16 @@ fn get_verifier(env: Env, verifier: Address) -> Option<VerifierInfo>;
 /// Governance: rotate the admin address.
 fn set_admin(env: Env, new_admin: Address) -> Result<(), Error>;
 fn get_admin(env: Env) -> Result<Address, Error>;
+
+/// Permissionless: refresh the TTL of an existing verification record
+/// (for high-value, long-lived attestations whose verifier doesn't want
+/// to re-attest just to keep storage alive). Errors with
+/// `VerificationNotFound` when `contract_id` has no on-chain record.
+fn bump_ttl(env: Env, contract_id: Address) -> Result<(), Error>;
+
+/// Permissionless: refresh the TTL of an existing verifier entry.
+/// Errors with `UnauthorizedVerifier` when `verifier` is not registered.
+fn bump_verifier_ttl(env: Env, verifier: Address) -> Result<(), Error>;
 ```
 
 ## Conflict-resolution policy

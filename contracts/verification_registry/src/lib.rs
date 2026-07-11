@@ -33,8 +33,29 @@ pub use types::{DataKey, Error, TrustLevel, VerificationPolicy, VerificationReco
 /// Average seconds per Stellar ledger (~5 s). `86_400 / 5 = 17_280`.
 const DAY_IN_LEDGERS: u32 = 17280;
 /// How far each persistent write extends the entry's TTL.
+///
+/// Picked at 90 days to split the difference between two competing
+/// pressures:
+///   * long enough that long-lived attestations don't expire between
+///     normal rebuild cadence (build pipelines typically run monthly
+///     or less), so a high-trust attestation stays available without
+///     the verifier needing to re-run the build just to keep storage
+///     alive;
+///   * short enough that stale entries — verifiers whose operators
+///     walked away — do not bloat ledger state indefinitely. Anyone
+///     (a wallet, an explorer, or another contract) can refresh an
+///     existing entry via `bump_ttl` / `bump_verifier_ttl` without
+///     re-attesting.
+///
+/// The 90-day window was the median of the 30/90/180 trade-offs
+/// discussed when the storage model was first drafted.
 const BUMP_AMOUNT: u32 = 90 * DAY_IN_LEDGERS;
 /// Extend only when the remaining TTL has dropped below this threshold.
+///
+/// Sits one day below `BUMP_AMOUNT` so the operation is effectively
+/// idempotent: calling `bump_ttl` immediately after `attest` (where
+/// the entry was just bumped) is a no-op rather than a redundant
+/// second extension.
 const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 #[contract]
@@ -294,50 +315,15 @@ impl VerificationRegistry {
         Self::admin(&env)
     }
 
-    /// Governance: configure the conflict-resolution policy applied
-    /// to canonical records. Defaults to `LastWriteWins`.
-    ///
-    /// Accepts any `VerificationPolicy` variant except `MinQuorum(0)`,
-    /// which would deadlock reads (`VerifyingNotFound`-or-cycle)
-    /// and is rejected with `InvalidPolicy`.
-    pub fn set_policy(env: Env, policy: VerificationPolicy) -> Result<(), Error> {
-        let admin = Self::admin(&env)?;
-        admin.require_auth();
-
-        if let VerificationPolicy::MinQuorum(n) = &policy {
-            if *n == 0 {
-                return Err(Error::InvalidPolicy);
-            }
-        }
-
-        env.storage().instance().set(&DataKey::Policy, &policy);
-        env.storage()
-            .instance()
-            .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
-
-        events::PolicyChanged { new_policy: policy }.publish(&env);
-        Ok(())
-    }
-
-    /// Read the active conflict-resolution policy. Defaults to
-    /// `LastWriteWins` for registries deployed before this feature
-    /// shipped and therefore have no `DataKey::Policy` entry.
-    pub fn get_policy(env: Env) -> VerificationPolicy {
-        Self::current_policy(&env)
-    }
-
-    /// Read-only helper for the active policy. Takes `&Env` so the
-    /// helper methods can probe policy state without owning `Env`.
-    fn current_policy(env: &Env) -> VerificationPolicy {
-        env.storage()
-            .instance()
-            .get(&DataKey::Policy)
-            .unwrap_or(VerificationPolicy::LastWriteWins)
-    }
-
     /// Permissionless: refresh the TTL of an existing verification
-    /// record so it does not expire. Errors with `VerificationNotFound`
-    /// if no attestation has ever been published for `contract_id`.
+    /// record so it does not expire.
+    ///
+    /// Useful for high-value, long-lived attestations. A wallet or
+    /// explorer that relies on a record can keep its storage entry
+    /// alive without coordinating with the original verifier — there
+    /// is no semantic change to the record content, only the
+    /// lifetime extension. Returns `VerificationNotFound` when no
+    /// attestation has ever been published for `contract_id`.
     pub fn bump_ttl(env: Env, contract_id: Address) -> Result<(), Error> {
         let key = DataKey::Verification(contract_id);
         if !env.storage().persistent().has(&key) {
@@ -353,8 +339,12 @@ impl VerificationRegistry {
     }
 
     /// Permissionless: refresh the TTL of an existing verifier entry.
-    /// Errors with `UnauthorizedVerifier` (repurposed) when no verifier
-    /// is registered at `verifier`.
+    ///
+    /// Counterpart of `bump_ttl` for the verifier side of the
+    /// registry. Returns `UnauthorizedVerifier` (repurposed) when no
+    /// verifier is registered at `verifier` — the storage-key absence
+    /// is, from the caller's perspective, indistinguishable from
+    /// "no such verifier".
     pub fn bump_verifier_ttl(env: Env, verifier: Address) -> Result<(), Error> {
         let key = DataKey::Verifier(verifier);
         if !env.storage().persistent().has(&key) {
