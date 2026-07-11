@@ -306,6 +306,55 @@ fn set_admin_rotates_governance() {
     );
 }
 
+// --- bump_ttl (permissionless TTL refresh) ---
+
+#[test]
+fn bump_ttl_succeeds_on_existing_record() {
+    let s = setup();
+    let subject = Address::generate(&s.env);
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+
+    // Permissionless — clear any auths recorded by `attest` and
+    // confirm `bump_ttl` itself does not record any.
+    s.env.auths().clear();
+    s.client.bump_ttl(&subject);
+    assert!(s.env.auths().is_empty());
+
+    // The verification record is still there afterwards.
+    assert!(s.client.get_verification(&subject).is_some());
+}
+
+#[test]
+fn bump_ttl_fails_on_missing_record() {
+    let s = setup();
+    let never_attested = Address::generate(&s.env);
+    assert_eq!(
+        s.client.try_bump_ttl(&never_attested),
+        Err(Ok(Error::VerificationNotFound))
+    );
+}
+
+#[test]
+fn bump_verifier_ttl_succeeds_on_existing_verifier() {
+    let s = setup();
+    s.env.auths().clear();
+    s.client.bump_verifier_ttl(&s.verifier);
+    assert!(s.env.auths().is_empty());
+    assert!(s.client.get_verifier(&s.verifier).is_some());
+}
+
+#[test]
+fn bump_verifier_ttl_fails_on_missing_verifier() {
+    let s = setup();
+    let ghost = Address::generate(&s.env);
+    s.env.auths().clear();
+    assert_eq!(
+        s.client.try_bump_verifier_ttl(&ghost),
+        Err(Ok(Error::UnauthorizedVerifier))
+    );
+}
+
 // --- trust levels ---
 
 #[test]

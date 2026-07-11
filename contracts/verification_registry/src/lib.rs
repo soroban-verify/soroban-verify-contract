@@ -27,11 +27,32 @@ use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 
 pub use types::{DataKey, Error, TrustLevel, VerificationRecord, VerifierInfo};
 
-/// Assuming ~5s per ledger.
+/// Average seconds per Stellar ledger (~5 s). `86_400 / 5 = 17_280`.
 const DAY_IN_LEDGERS: u32 = 17280;
-/// How far each write extends the entry's TTL.
+/// How far each persistent write extends the entry's TTL.
+///
+/// Picked at 90 days to split the difference between two competing
+/// pressures:
+///   * long enough that long-lived attestations don't expire between
+///     normal rebuild cadence (build pipelines typically run monthly
+///     or less), so a high-trust attestation stays available without
+///     the verifier needing to re-run the build just to keep storage
+///     alive;
+///   * short enough that stale entries — verifiers whose operators
+///     walked away — do not bloat ledger state indefinitely. Anyone
+///     (a wallet, an explorer, or another contract) can refresh an
+///     existing entry via `bump_ttl` / `bump_verifier_ttl` without
+///     re-attesting.
+///
+/// The 90-day window was the median of the 30/90/180 trade-offs
+/// discussed when the storage model was first drafted.
 const BUMP_AMOUNT: u32 = 90 * DAY_IN_LEDGERS;
-/// Extend only when the remaining TTL has dropped below this.
+/// Extend only when the remaining TTL has dropped below this threshold.
+///
+/// Sits one day below `BUMP_AMOUNT` so the operation is effectively
+/// idempotent: calling `bump_ttl` immediately after `attest` (where
+/// the entry was just bumped) is a no-op rather than a redundant
+/// second extension.
 const LIFETIME_THRESHOLD: u32 = BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 #[contract]
@@ -176,6 +197,50 @@ impl VerificationRegistry {
     /// The current governance address.
     pub fn get_admin(env: Env) -> Result<Address, Error> {
         Self::admin(&env)
+    }
+
+    /// Permissionless: refresh the TTL of an existing verification
+    /// record so it does not expire.
+    ///
+    /// Useful for high-value, long-lived attestations. A wallet or
+    /// explorer that relies on a record can keep its storage entry
+    /// alive without coordinating with the original verifier — there
+    /// is no semantic change to the record content, only the
+    /// lifetime extension. Returns `VerificationNotFound` when no
+    /// attestation has ever been published for `contract_id`.
+    pub fn bump_ttl(env: Env, contract_id: Address) -> Result<(), Error> {
+        let key = DataKey::Verification(contract_id);
+        if !env.storage().persistent().has(&key) {
+            return Err(Error::VerificationNotFound);
+        }
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        env.storage()
+            .instance()
+            .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        Ok(())
+    }
+
+    /// Permissionless: refresh the TTL of an existing verifier entry.
+    ///
+    /// Counterpart of `bump_ttl` for the verifier side of the
+    /// registry. Returns `UnauthorizedVerifier` (repurposed) when no
+    /// verifier is registered at `verifier` — the storage-key absence
+    /// is, from the caller's perspective, indistinguishable from
+    /// "no such verifier".
+    pub fn bump_verifier_ttl(env: Env, verifier: Address) -> Result<(), Error> {
+        let key = DataKey::Verifier(verifier);
+        if !env.storage().persistent().has(&key) {
+            return Err(Error::UnauthorizedVerifier);
+        }
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        env.storage()
+            .instance()
+            .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
+        Ok(())
     }
 
     fn admin(env: &Env) -> Result<Address, Error> {
