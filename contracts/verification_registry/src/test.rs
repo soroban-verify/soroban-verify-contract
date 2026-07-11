@@ -7,8 +7,8 @@ use soroban_sdk::{
 };
 
 use crate::{
-    Error, TrustLevel, VerificationRecord, VerificationRegistry, VerificationRegistryClient,
-    VerifierInfo,
+    Error, TrustLevel, VerificationPolicy, VerificationRecord, VerificationRegistry,
+    VerificationRegistryClient, VerifierInfo,
 };
 
 struct Setup {
@@ -315,4 +315,214 @@ fn trust_levels_are_ordered_for_composability() {
     assert!(TrustLevel::Auditable > TrustLevel::DeployerSupplied);
     assert!(TrustLevel::DeployerSupplied > TrustLevel::Failed);
     assert!(TrustLevel::Auditable >= TrustLevel::Auditable);
+}
+
+// --- VerificationPolicy ---
+
+#[test]
+fn policy_defaults_to_last_write_wins() {
+    let s = setup();
+    assert_eq!(s.client.get_policy(), VerificationPolicy::LastWriteWins);
+}
+
+#[test]
+fn set_policy_records_admin_auth_and_updates_get_policy() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::MinQuorum(3));
+
+    // The admin's auth must be recorded.
+    let (auth_addr, _invocation) = s.env.auths().first().unwrap().clone();
+    assert_eq!(auth_addr, s.admin);
+
+    assert_eq!(s.client.get_policy(), VerificationPolicy::MinQuorum(3));
+}
+
+#[test]
+fn set_policy_rejects_zero_quorum() {
+    let s = setup();
+    assert_eq!(
+        s.client.try_set_policy(&VerificationPolicy::MinQuorum(0)),
+        Err(Ok(Error::InvalidPolicy))
+    );
+    // Policy unchanged after the rejected call.
+    assert_eq!(s.client.get_policy(), VerificationPolicy::LastWriteWins);
+}
+
+#[test]
+fn set_policy_emits_policy_changed_event() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::LowestTrust);
+
+    // Note: env.events().all() only retains events from the most
+    // recent invocation, so no contract calls may happen between
+    // set_policy and the assertion.
+    let events = s.env.events().all();
+    assert_eq!(
+        events.slice(events.len() - 1..),
+        vec![
+            &s.env,
+            (
+                s.client.address.clone(),
+                (symbol_short!("policy"),).into_val(&s.env),
+                VerificationPolicy::LowestTrust.into_val(&s.env),
+            )
+        ]
+    );
+}
+
+#[test]
+fn min_quorum_waits_for_n_agreements() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::MinQuorum(2));
+
+    let subject = Address::generate(&s.env);
+
+    // One verifier attests with wasm_hash=1: not enough for n=2.
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+    assert_eq!(s.client.get_verification(&subject), None);
+
+    // Second active verifier attests with the same wasm_hash (1).
+    // Their record uses a different trust_level / repo to confirm the
+    // quorum rule is on wasm_hash equality, not on record equality.
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let mut second_record = sample_record(&s.env, &second);
+    second_record.repo_url = String::from_str(&s.env, "https://github.com/other/project");
+    second_record.trust_level = TrustLevel::Auditable;
+    s.client.attest(&second, &subject, &second_record);
+
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.wasm_hash, second_record.wasm_hash);
+    // The canonical record is one of the agreeing attestations.
+    assert_eq!(canonical.trust_level, TrustLevel::Auditable);
+    assert_eq!(canonical.verifier, second);
+}
+
+#[test]
+fn min_quorum_does_not_publish_when_verifiers_disagree() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::MinQuorum(2));
+
+    let subject = Address::generate(&s.env);
+
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let mut disagreeing = sample_record(&s.env, &second);
+    // Different wasm_hash from the first verifier's record.
+    disagreeing.wasm_hash = BytesN::from_array(&s.env, &[2u8; 32]);
+    s.client.attest(&second, &subject, &disagreeing);
+
+    // Both verifiers agree on different wasm_hashes; neither has
+    // quorum (1 each). No canonical.
+    assert_eq!(s.client.get_verification(&subject), None);
+}
+
+#[test]
+fn lowest_trust_picks_min_trust_across_active_verifiers() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::LowestTrust);
+
+    let subject = Address::generate(&s.env);
+
+    // Verifier 1 attests Trusted.
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.trust_level, TrustLevel::Trusted);
+
+    // Verifier 2 attests Failed — but Failed is the floor of the
+    // ordering, so the canonical should flip to a record carrying
+    // Failed.
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let mut low_record = sample_record(&s.env, &second);
+    low_record.trust_level = TrustLevel::Failed;
+    s.client.attest(&second, &subject, &low_record);
+
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.trust_level, TrustLevel::Failed);
+    assert_eq!(canonical.verifier, second);
+
+    // Verifier 3 attests Auditable — min stays at Failed (the floor)
+    // because one verifiable still attests Failed.
+    let third = Address::generate(&s.env);
+    s.client.set_verifier(&third, &verifier_info(&s.env, true));
+    let mut mid_record = sample_record(&s.env, &third);
+    mid_record.trust_level = TrustLevel::Auditable;
+    s.client.attest(&third, &subject, &mid_record);
+
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.trust_level, TrustLevel::Failed);
+}
+
+#[test]
+fn revoke_forces_canonical_to_failed_across_policies() {
+    let s = setup();
+    // Even under MinQuorum, revocation must be a safety hatch.
+    s.client.set_policy(&VerificationPolicy::MinQuorum(3));
+    let subject = Address::generate(&s.env);
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+    // Pre-revoke canonical is absent (only one verifier, far from
+    // n=3). Revoke is still meaningful because it canonically marks
+    // the attestation as compromised.
+    s.client
+        .revoke(&s.verifier, &subject, &symbol_short!("imgcompr"));
+
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.trust_level, TrustLevel::Failed);
+    // Repo URL / commit are preserved (provenance).
+    assert_eq!(
+        canonical.repo_url,
+        String::from_str(&s.env, "https://github.com/org/project")
+    );
+}
+
+#[test]
+fn set_verifier_deactivation_recomputes_lowest_trust() {
+    let s = setup();
+    s.client.set_policy(&VerificationPolicy::LowestTrust);
+    let subject = Address::generate(&s.env);
+
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let mut low_record = sample_record(&s.env, &second);
+    low_record.trust_level = TrustLevel::Failed;
+    low_record.wasm_hash = BytesN::from_array(&s.env, &[3u8; 32]);
+    s.client.attest(&second, &subject, &low_record);
+    // Canonical is Failed (the floor).
+    assert_eq!(
+        s.client.get_verification(&subject).unwrap().trust_level,
+        TrustLevel::Failed
+    );
+
+    // Deactivate the verifier attesting at Failed. Canonical should
+    // recompute to the remaining-attesters' min (Trusted).
+    s.client
+        .set_verifier(&second, &verifier_info(&s.env, false));
+    let canonical = s.client.get_verification(&subject).unwrap();
+    assert_eq!(canonical.trust_level, TrustLevel::Trusted);
+    assert_eq!(canonical.verifier, s.verifier);
+}
+
+#[test]
+fn set_verifier_deactivation_is_noop_under_last_write_wins() {
+    let s = setup();
+    let subject = Address::generate(&s.env);
+    s.client
+        .attest(&s.verifier, &subject, &sample_record(&s.env, &s.verifier));
+    let prior = s.client.get_verification(&subject).unwrap();
+
+    // Deactivate. Under LastWriteWins the canonical must NOT change.
+    s.client
+        .set_verifier(&s.verifier, &verifier_info(&s.env, false));
+    let after = s.client.get_verification(&subject).unwrap();
+    assert_eq!(prior.trust_level, after.trust_level);
+    assert_eq!(prior.wasm_hash, after.wasm_hash);
 }
