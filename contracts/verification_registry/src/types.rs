@@ -25,6 +25,12 @@ pub enum TrustLevel {
 }
 
 /// A verification claim attested on-chain by a registered verifier.
+///
+/// The SEP-58 build-environment fields (`build_image_digest`,
+/// `toolchain_version`) extend the basic claim so a downstream consumer
+/// can independently reproduce the build and differentiate between
+/// attestations performed in different pinned environments.
+/// Spec: SEP-58 draft (May 2026), `build_image` and `toolchain` fields.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerificationRecord {
@@ -45,6 +51,16 @@ pub struct VerificationRecord {
     /// Ledger timestamp at which the attestation was recorded. Set by
     /// the contract on `attest`, not trusted from the caller.
     pub timestamp: u64,
+    /// SEP-58 `build_image`: OCI image digest (e.g.
+    /// `sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`)
+    /// of the build environment the verifier used to reproduce the Wasm.
+    /// Empty string is acceptable for legacy records; the hosted verifier
+    /// always populates this.
+    pub build_image_digest: String,
+    /// SEP-58 `toolchain`: toolchain channel + version string used for
+    /// the rebuild (e.g. `stable-1.78.0`). Empty string is acceptable
+    /// for legacy records; the hosted verifier always populates this.
+    pub toolchain_version: String,
 }
 
 /// Metadata about a registered verifier. The registry is multi-verifier
