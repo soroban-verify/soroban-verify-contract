@@ -37,6 +37,16 @@ fn get_verifier(env: Env, verifier: Address) -> Option<VerifierInfo>;
 /// Governance: rotate the admin address.
 fn set_admin(env: Env, new_admin: Address) -> Result<(), Error>;
 fn get_admin(env: Env) -> Result<Address, Error>;
+
+/// Permissionless: refresh the TTL of an existing verification record
+/// (for high-value, long-lived attestations whose verifier doesn't want
+/// to re-attest just to keep storage alive). Errors with
+/// `VerificationNotFound` when `contract_id` has no on-chain record.
+fn bump_ttl(env: Env, contract_id: Address) -> Result<(), Error>;
+
+/// Permissionless: refresh the TTL of an existing verifier entry.
+/// Errors with `UnauthorizedVerifier` when `verifier` is not registered.
+fn bump_verifier_ttl(env: Env, verifier: Address) -> Result<(), Error>;
 ```
 
 ## Trust levels
