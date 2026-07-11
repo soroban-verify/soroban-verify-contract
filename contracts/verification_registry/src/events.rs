@@ -5,7 +5,7 @@
 
 use soroban_sdk::{contractevent, Address, Symbol};
 
-use crate::types::{VerificationRecord, VerifierInfo};
+use crate::types::{VerificationPolicy, VerificationRecord, VerifierInfo};
 
 /// Emitted when a verifier publishes or overwrites a verification record.
 #[contractevent(topics = ["attest"], data_format = "single-value")]
@@ -44,4 +44,15 @@ pub struct VerifierSet {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdminRotated {
     pub new_admin: Address,
+}
+
+/// Emitted when governance updates the verification policy. Carries
+/// the new active policy in the event payload so indexers can
+/// reconstruct — and downstream consumers can later audit — the
+/// policy that was in effect when a given canonical record was
+/// produced.
+#[contractevent(topics = ["policy"], data_format = "single-value")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PolicyChanged {
+    pub new_policy: VerificationPolicy,
 }
