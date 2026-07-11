@@ -99,6 +99,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "build_image_digest"
+                      },
+                      "val": {
+                        "string": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "commit_sha"
                       },
                       "val": {
@@ -127,6 +135,14 @@
                       },
                       "val": {
                         "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "toolchain_version"
+                      },
+                      "val": {
+                        "string": "stable-1.78.0"
                       }
                     },
                     {
@@ -229,6 +245,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "build_image_digest"
+                      },
+                      "val": {
+                        "string": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "commit_sha"
                       },
                       "val": {
@@ -257,6 +281,14 @@
                       },
                       "val": {
                         "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "toolchain_version"
+                      },
+                      "val": {
+                        "string": "stable-1.78.0"
                       }
                     },
                     {
@@ -395,6 +427,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "build_image_digest"
+                      },
+                      "val": {
+                        "string": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "commit_sha"
                       },
                       "val": {
@@ -423,6 +463,14 @@
                       },
                       "val": {
                         "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "toolchain_version"
+                      },
+                      "val": {
+                        "string": "stable-1.78.0"
                       }
                     },
                     {
@@ -643,6 +691,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "build_image_digest"
+                      },
+                      "val": {
+                        "string": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "commit_sha"
                       },
                       "val": {
@@ -671,6 +727,14 @@
                       },
                       "val": {
                         "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "toolchain_version"
+                      },
+                      "val": {
+                        "string": "stable-1.78.0"
                       }
                     },
                     {
@@ -751,6 +815,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "build_image_digest"
+                      },
+                      "val": {
+                        "string": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "commit_sha"
                       },
                       "val": {
@@ -779,6 +851,14 @@
                       },
                       "val": {
                         "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "toolchain_version"
+                      },
+                      "val": {
+                        "string": "stable-1.78.0"
                       }
                     },
                     {

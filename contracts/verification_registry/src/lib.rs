@@ -315,6 +315,38 @@ impl VerificationRegistry {
         Self::admin(&env)
     }
 
+    /// Governance: configure the conflict-resolution policy applied
+    /// to canonical records. Defaults to `LastWriteWins`.
+    ///
+    /// Accepts any `VerificationPolicy` variant except `MinQuorum(0)`,
+    /// which would deadlock reads (`get_verification` returning `None`
+    /// forever) and is rejected at the gate with `InvalidPolicy`.
+    pub fn set_policy(env: Env, policy: VerificationPolicy) -> Result<(), Error> {
+        let admin = Self::admin(&env)?;
+        admin.require_auth();
+
+        if let VerificationPolicy::MinQuorum(n) = &policy {
+            if *n == 0 {
+                return Err(Error::InvalidPolicy);
+            }
+        }
+
+        env.storage().instance().set(&DataKey::Policy, &policy);
+        env.storage()
+            .instance()
+            .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
+
+        events::PolicyChanged { new_policy: policy }.publish(&env);
+        Ok(())
+    }
+
+    /// Read the active conflict-resolution policy. Defaults to
+    /// `LastWriteWins` for registries deployed before this feature
+    /// shipped and therefore have no `DataKey::Policy` entry.
+    pub fn get_policy(env: Env) -> VerificationPolicy {
+        Self::current_policy(&env)
+    }
+
     /// Permissionless: refresh the TTL of an existing verification
     /// record so it does not expire.
     ///
@@ -364,6 +396,15 @@ impl VerificationRegistry {
             .instance()
             .get(&DataKey::Admin)
             .ok_or(Error::NotInitialized)
+    }
+
+    /// Read-only helper for the active policy. Takes `&Env` so the
+    /// helper methods can probe policy state without owning `Env`.
+    fn current_policy(env: &Env) -> VerificationPolicy {
+        env.storage()
+            .instance()
+            .get(&DataKey::Policy)
+            .unwrap_or(VerificationPolicy::LastWriteWins)
     }
 
     fn require_admin(env: &Env, who: &Address) -> Result<(), Error> {
