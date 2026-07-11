@@ -6,9 +6,11 @@ The **on-chain source of truth for verification results**. Any wallet, explorer,
 
 | Key | Value | Storage |
 |---|---|---|
-| `Verification(ContractId)` | `VerificationRecord { wasm_hash, repo_url, commit_sha, trust_level, verifier, sep55_attestation_ref, timestamp }` | persistent |
+| `Verification(ContractId)` | `VerificationRecord { wasm_hash, repo_url, commit_sha, trust_level, verifier, sep55_attestation_ref, timestamp, build_image_digest, toolchain_version }` | persistent |
 | `Verifier(Address)` | `VerifierInfo { name, pubkey, active }` | persistent |
 | `Admin` | Multi-sig admin address (governance) | instance |
+
+The two `build_image_digest` / `toolchain_version` fields are SEP-58 build-environment metadata. Empty string is tolerated for legacy records; the hosted verifier always populates them. See `types.rs` for the SEP-58 spec pointers.
 
 ## Interface
 

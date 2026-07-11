@@ -56,6 +56,14 @@ fn sample_record(env: &Env, verifier: &Address) -> VerificationRecord {
         verifier: verifier.clone(),
         sep55_attestation_ref: String::from_str(env, "sep55:run/42"),
         timestamp: 0,
+        // SEP-58 build environment fields populated by the hosted
+        // verifier in production. Empty string is acceptable for tests
+        // that intentionally model legacy records.
+        build_image_digest: String::from_str(
+            env,
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        toolchain_version: String::from_str(env, "stable-1.78.0"),
     }
 }
 
