@@ -146,6 +146,12 @@ pub enum DataKey {
     /// attested to. Lets `set_verifier` recompute policy state
     /// quickly on deactivation under `LowestTrust`.
     VerifierContracts(Address),
+    /// Instance: `Vec<Address>` of all ever-registered verifiers.
+    /// Maintained by `set_verifier` — appends address if not already
+    /// present. Never removes entries (deactivated verifiers stay in
+    /// the list so history is preserved). Bounded by Soroban Vec
+    /// limits; practical limit is hundreds of entries.
+    VerifierList,
 }
 
 #[contracterror]

@@ -9,6 +9,7 @@ The **on-chain source of truth for verification results**. Any wallet, explorer,
 | `Verification(ContractId)` | `VerificationRecord { wasm_hash, repo_url, commit_sha, trust_level, verifier, sep55_attestation_ref, timestamp, build_image_digest, toolchain_version }` | persistent |
 | `Verifier(Address)` | `VerifierInfo { name, pubkey, active }` | persistent |
 | `Admin` | Multi-sig admin address (governance) | instance |
+| `VerifierList` | `Vec<Address>` of all ever-registered verifiers (history preserved on deactivation) | instance |
 
 The two `build_image_digest` / `toolchain_version` fields are SEP-58 build-environment metadata. Empty string is tolerated for legacy records; the hosted verifier always populates them. See `types.rs` for the SEP-58 spec pointers.
 
@@ -33,6 +34,14 @@ fn revoke(env: Env, revoked_by: Address, contract_id: Address, reason: Symbol) -
 /// Governance: add/update/deactivate verifier keys.
 fn set_verifier(env: Env, verifier: Address, info: VerifierInfo) -> Result<(), Error>;
 fn get_verifier(env: Env, verifier: Address) -> Option<VerifierInfo>;
+
+/// View: return all ever-registered verifier addresses (incl. deactivated).
+/// Useful for wallet/explorer UIs and governance audits.
+fn list_verifiers(env: Env) -> Vec<Address>;
+
+/// View: return only currently active verifier addresses.
+/// Useful for downstream contracts checking multi-verifier quorum.
+fn list_active_verifiers(env: Env) -> Vec<Address>;
 
 /// Governance: rotate the admin address.
 fn set_admin(env: Env, new_admin: Address) -> Result<(), Error>;
@@ -91,6 +100,7 @@ The ordering makes on-chain composition trivial: a lending protocol can require 
 | 2 | `NotInitialized` | governance call before `init` |
 | 3 | `UnauthorizedVerifier` | caller is not a registered, active verifier (or admin, where allowed) |
 | 4 | `VerificationNotFound` | `revoke` on a contract with no record |
+| 5 | `InvalidPolicy` | `set_policy(MinQuorum(0))` rejected |
 
 ## Build & test
 

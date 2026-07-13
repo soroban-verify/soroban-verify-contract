@@ -568,6 +568,83 @@ fn set_verifier_deactivation_recomputes_lowest_trust() {
     assert_eq!(canonical.verifier, s.verifier);
 }
 
+// --- verifier enumeration ---
+
+#[test]
+fn list_verifiers_returns_all_registered_verifiers() {
+    let s = setup();
+
+    // The default `setup` already registered `s.verifier`.
+    let all = s.client.list_verifiers();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all.get(0).unwrap(), s.verifier);
+
+    // Add more verifiers.
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let third = Address::generate(&s.env);
+    s.client.set_verifier(&third, &verifier_info(&s.env, false));
+
+    let all = s.client.list_verifiers();
+    assert_eq!(all.len(), 3);
+    // Order should be: s.verifier, second, third.
+    assert_eq!(all.get(0).unwrap(), s.verifier);
+    assert_eq!(all.get(1).unwrap(), second);
+    assert_eq!(all.get(2).unwrap(), third);
+}
+
+#[test]
+fn list_verifiers_does_not_duplicate_on_reregister() {
+    let s = setup();
+
+    // Re-register the same verifier (e.g. update its info).
+    s.client
+        .set_verifier(&s.verifier, &verifier_info(&s.env, true));
+
+    let all = s.client.list_verifiers();
+    // Still only one entry.
+    assert_eq!(all.len(), 1);
+    assert_eq!(all.get(0).unwrap(), s.verifier);
+}
+
+#[test]
+fn list_active_verifiers_returns_only_active() {
+    let s = setup();
+
+    // Default `setup` has 1 active verifier.
+    let active = s.client.list_active_verifiers();
+    assert_eq!(active.len(), 1);
+
+    let second = Address::generate(&s.env);
+    s.client.set_verifier(&second, &verifier_info(&s.env, true));
+    let active = s.client.list_active_verifiers();
+    assert_eq!(active.len(), 2);
+
+    // Deactivate the first verifier.
+    s.client
+        .set_verifier(&s.verifier, &verifier_info(&s.env, false));
+    let active = s.client.list_active_verifiers();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active.get(0).unwrap(), second);
+
+    // `list_verifiers` still returns both (history preserved).
+    let all = s.client.list_verifiers();
+    assert_eq!(all.len(), 2);
+}
+
+#[test]
+fn list_verifiers_empty_before_any_registration() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = VerificationRegistryClient::new(&env, &env.register(VerificationRegistry, ()));
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // No verifiers registered yet.
+    assert_eq!(client.list_verifiers().len(), 0);
+    assert_eq!(client.list_active_verifiers().len(), 0);
+}
+
 #[test]
 fn set_verifier_deactivation_is_noop_under_last_write_wins() {
     let s = setup();
