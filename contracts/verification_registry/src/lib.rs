@@ -301,6 +301,14 @@ impl VerificationRegistry {
     }
 
     /// Governance: rotate the admin address.
+    ///
+    /// // SECURITY: On mainnet, `new_admin` MUST be a Soroban
+    /// // multi-sig address (e.g. 3-of-5), not a single hot key.
+    /// // A compromised single-key admin can register arbitrary
+    /// // verifiers, revoke any verification, or rotate itself
+    /// // silently — see SECURITY.md → Mainnet Deployment Checklist.
+    /// // A timelock before `set_admin` takes effect is recommended
+    /// // so the current admin can abort a compromised rotation.
     pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
         let admin = Self::admin(&env)?;
         admin.require_auth();
