@@ -280,6 +280,11 @@ impl VerificationRegistry {
             .persistent()
             .extend_ttl(&key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
 
+        // Maintain the verifier list index: append if not already
+        // present. Never removes entries (deactivated verifiers
+        // stay in the list so history is preserved).
+        Self::add_to_verifier_list(&env, &verifier);
+
         // If we're deactivating an active verifier, recompute every
         // contract they previously attested to. Under `LowestTrust`
         // the min across remaining active verifiers changes; we
@@ -298,6 +303,44 @@ impl VerificationRegistry {
     /// Look up a registered verifier's metadata.
     pub fn get_verifier(env: Env, verifier: Address) -> Option<VerifierInfo> {
         env.storage().persistent().get(&DataKey::Verifier(verifier))
+    }
+
+    /// View function: return all ever-registered verifier addresses
+    /// (including deactivated ones). Returns an empty `Vec` if no
+    /// verifiers have been registered yet.
+    ///
+    /// Useful for wallet/explorer UIs that need to display
+    /// "verified by X independent verifiers" without off-chain
+    /// indexing, and for governance audits requiring a full picture
+    /// of registered keys. Bounded by Soroban Vec limits; practical
+    /// limit is hundreds of entries.
+    pub fn list_verifiers(env: Env) -> Vec<Address> {
+        env.storage()
+            .instance()
+            .get(&DataKey::VerifierList)
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    /// Convenience filter: return only verifier addresses whose
+    /// `active` flag is `true`. Returns an empty `Vec` if no
+    /// active verifiers exist.
+    ///
+    /// Useful for downstream contracts checking multi-verifier
+    /// quorum that need to iterate active verifiers.
+    pub fn list_active_verifiers(env: Env) -> Vec<Address> {
+        let all = Self::list_verifiers(env.clone());
+        let mut active = Vec::new(&env);
+        let len = all.len();
+        let mut i: u32 = 0;
+        while i < len {
+            if let Some(v) = all.get(i) {
+                if Self::is_active_verifier(&env, &v) {
+                    active.push_back(v);
+                }
+            }
+            i += 1;
+        }
+        active
     }
 
     /// Governance: rotate the admin address.
@@ -453,6 +496,25 @@ impl VerificationRegistry {
         env.storage()
             .persistent()
             .extend_ttl(key, LIFETIME_THRESHOLD, BUMP_AMOUNT);
+    }
+
+    /// Maintain the `VerifierList` index in instance storage.
+    /// Appends `verifier` to the `Vec<Address>` if not already
+    /// present. Bounded by Soroban Vec limits; the practical
+    /// limit is hundreds of entries.
+    fn add_to_verifier_list(env: &Env, verifier: &Address) {
+        let mut list: Vec<Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::VerifierList)
+            .unwrap_or_else(|| Vec::new(env));
+        if !Self::vec_contains(&list, verifier) {
+            list.push_back(verifier.clone());
+            env.storage().instance().set(&DataKey::VerifierList, &list);
+        }
+        env.storage()
+            .instance()
+            .extend_ttl(LIFETIME_THRESHOLD, BUMP_AMOUNT);
     }
 
     fn vec_contains(vec: &Vec<Address>, target: &Address) -> bool {
